@@ -1,32 +1,37 @@
 package com.example.dermoescuela_app.views
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import coil.compose.rememberAsyncImagePainter
+import com.example.dermoescuela_app.api.RetrofitClient
 import com.example.dermoescuela_app.auth.AuthManager
-import com.example.dermoescuela_app.ui.theme.montserratFontFamily
+import com.example.dermoescuela_app.models.VideoResponse
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeView(navController: NavController) {
-    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val authManager = remember { AuthManager(context) }
 
+    var videoList by remember { mutableStateOf(listOf<VideoResponse>()) }
+    var isLoading by remember { mutableStateOf(true) }
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
 
+    // Obtener perfil y lista de videos
     LaunchedEffect(Unit) {
         scope.launch {
             val profile = authManager.getUserProfile()
@@ -34,80 +39,92 @@ fun HomeView(navController: NavController) {
                 firstName = profile.firstName
                 lastName = profile.lastName
             }
+
+            val token = authManager.getToken() ?: return@launch
+            val response = RetrofitClient.createRetrofitWithToken(token)
+                .create(com.example.dermoescuela_app.api.ApiService::class.java)
+                .getAllVideos("Bearer $token")
+
+            if (response.isSuccessful) {
+                videoList = response.body() ?: emptyList()
+            }
+            isLoading = false
         }
     }
 
     Scaffold(
-        snackbarHost = {
-            SnackbarHost(snackbarHostState)
-        }
+        topBar = { HomeTitle(firstName, lastName) }
     ) { paddingValues ->
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(16.dp)
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
             ) {
-                HomeTitle(firstName, lastName)
-                Spacer(modifier = Modifier.height(24.dp))
-                LogoutButton(navController = navController)
+                CircularProgressIndicator()
             }
+        } else {
+            VideoList(videos = videoList, navController = navController, paddingValues = paddingValues)
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeTitle(firstName: String, lastName: String) {
-    Text(
-        text = "Bienvenido $firstName $lastName",
-        fontFamily = montserratFontFamily,
-        fontWeight = FontWeight.Medium,
-        color = Color(0xFF223341),
+    TopAppBar(
+        title = {
+            Text(
+                text = "Bienvenido(a) $firstName $lastName",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
     )
 }
 
 @Composable
-fun LogoutButton(
-    navController: NavController
-) {
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current  // Obtener el contexto
-    val authManager = remember { AuthManager(context) }  // Pasar el contexto a AuthManager
-
-    OutlinedButton(
-        onClick = {
-            scope.launch {
-                try {
-                    // Llamar a la función de logout del AuthManager
-                    authManager.logout()
-
-                    // Navegar de regreso a la pantalla de login
-                    navController.navigate("login") {
-                        popUpTo("home") { inclusive = true }  // Limpiar el historial de navegación
-                    }
-                    // Ya no se muestra el Snackbar
-                } catch (e: Exception) {
-                    // Solo en caso de error mostramos el Snackbar
-                    navController.navigate("login") // En caso de error, vuelve a la pantalla de inicio de sesión de todos modos
-                }
-            }
-        },
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = Color(0xFFA70532)
-        ),
-        modifier = Modifier.padding(vertical = 12.dp),
-        border = BorderStroke(1.dp, Color(0xFFA70532))
+fun VideoList(videos: List<VideoResponse>, navController: NavController, paddingValues: PaddingValues) {
+    LazyColumn(
+        contentPadding = paddingValues,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(8.dp)
     ) {
-        Text(
-            text = "CERRAR SESIÓN",
-            fontFamily = montserratFontFamily,
-            fontWeight = FontWeight.Bold
-        )
+        items(videos) { video ->
+            VideoItem(video = video, onClick = {
+                // Acción al hacer clic en el thumbnail
+                // Por ejemplo: navegación a una pantalla de detalle
+                println("Clicked on video: ${video.sessionNumber}")
+            })
+        }
     }
 }
 
+@Composable
+fun VideoItem(video: VideoResponse, onClick: () -> Unit) {
+    val thumbnailUrl = video.thumbnailUrl ?: "https://via.placeholder.com/150" // Imagen por defecto
 
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(8.dp)
+    ) {
+        // Thumbnail como imagen
+        Image(
+            painter = rememberAsyncImagePainter(model = thumbnailUrl),
+            contentDescription = "Thumbnail for ${video.description}",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(80.dp)
+                .padding(end = 8.dp)
+        )
+
+        // Título del video
+        Text(
+            text = "Clase ${video.sessionNumber}: ${video.description}",
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}

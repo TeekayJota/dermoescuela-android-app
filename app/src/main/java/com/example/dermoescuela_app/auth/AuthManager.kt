@@ -53,7 +53,7 @@ class AuthManager(private val context: Context) {
     }
 
     // Obtener el token almacenado
-    private fun getToken(): String? {
+    fun getToken(): String? {
         return sharedPreferences.getString("access_token", null)
     }
 
