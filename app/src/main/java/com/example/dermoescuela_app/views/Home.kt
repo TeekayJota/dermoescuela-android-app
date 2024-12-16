@@ -34,19 +34,28 @@ fun HomeView(navController: NavController) {
     // Obtener perfil y lista de videos
     LaunchedEffect(Unit) {
         scope.launch {
-            val profile = authManager.getUserProfile()
-            if (profile != null) {
-                firstName = profile.firstName
-                lastName = profile.lastName
-            }
+            try {
+                val profile = authManager.getUserProfile()
+                if (profile != null) {
+                    firstName = profile.firstName
+                    lastName = profile.lastName
+                }
 
-            val token = authManager.getToken() ?: return@launch
-            val response = RetrofitClient.createRetrofitWithToken(token)
-                .create(com.example.dermoescuela_app.api.ApiService::class.java)
-                .getAllVideos("Bearer $token")
+                val token = authManager.getToken() ?: return@launch
+                val response = RetrofitClient.createRetrofitWithToken(token)
+                    .create(com.example.dermoescuela_app.api.ApiService::class.java)
+                    .getAllVideos("Bearer $token")
 
-            if (response.isSuccessful) {
-                videoList = response.body() ?: emptyList()
+                if (response.isSuccessful) {
+                    response.body()?.let { videos ->
+                        println("Videos recibidos: $videos") // Imprimir los videos
+                        videoList = videos
+                    }
+                } else {
+                    println("Error al cargar videos: ${response.message()}")
+                }
+            } catch (e: Exception) {
+                println("Excepción en la carga de videos: ${e.message}")
             }
             isLoading = false
         }
@@ -85,24 +94,39 @@ fun HomeTitle(firstName: String, lastName: String) {
 
 @Composable
 fun VideoList(videos: List<VideoResponse>, navController: NavController, paddingValues: PaddingValues) {
-    LazyColumn(
-        contentPadding = paddingValues,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(8.dp)
-    ) {
-        items(videos) { video ->
-            VideoItem(video = video, onClick = {
-                // Acción al hacer clic en el thumbnail
-                // Por ejemplo: navegación a una pantalla de detalle
-                println("Clicked on video: ${video.sessionNumber}")
-            })
+    if (videos.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No hay videos disponibles.",
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    } else {
+        LazyColumn(
+            contentPadding = paddingValues,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(8.dp)
+        ) {
+            items(videos) { video ->
+                VideoItem(video = video, onClick = {
+                    println("Clicked on video: ${video.sessionNumber}")
+                })
+            }
         }
     }
 }
 
+
 @Composable
 fun VideoItem(video: VideoResponse, onClick: () -> Unit) {
-    val thumbnailUrl = video.thumbnailUrl ?: "https://via.placeholder.com/150" // Imagen por defecto
+    val thumbnailUrl = video.thumbnailUrl ?: "https://via.placeholder.com/150"
+    val sessionNumber = video.sessionNumber.takeIf { it > 0 } ?: "N/A"
+    val description = video.description.ifEmpty { "Sin descripción" }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -114,7 +138,7 @@ fun VideoItem(video: VideoResponse, onClick: () -> Unit) {
         // Thumbnail como imagen
         Image(
             painter = rememberAsyncImagePainter(model = thumbnailUrl),
-            contentDescription = "Thumbnail for ${video.description}",
+            contentDescription = "Thumbnail for $description",
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(80.dp)
@@ -123,7 +147,7 @@ fun VideoItem(video: VideoResponse, onClick: () -> Unit) {
 
         // Título del video
         Text(
-            text = "Clase ${video.sessionNumber}: ${video.description}",
+            text = "Clase $sessionNumber: $description",
             style = MaterialTheme.typography.bodyLarge
         )
     }
